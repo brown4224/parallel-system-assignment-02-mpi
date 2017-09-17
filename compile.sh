@@ -1,9 +1,7 @@
 #!bin/bash
 rm ./mpi_program -f
-#echo `mpiCC -g -Wall -o mpi_program main.cpp --std=c++11`
-#echo `mpic++ -g -Wall -o mpi_program main.cpp --std=c++11`
-mpiCC -g -Wall -o mpi_program main.cpp -std=c++0x
-mpiexec -n 5  mpi_program
+mpiCC -g -Wall -o mpi_program main.cpp -std=c++0x 
+mpiexec -n 5  mpi_program  ./random.binary  10
 
 
 
