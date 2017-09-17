@@ -40,24 +40,23 @@
 #include <mpi.h>
 
 using namespace std;
-//using namespace chrono;
-//
-//void clock(high_resolution_clock::time_point *array, int *time_samples) {
-//    for (int i = 0; i < *time_samples; i++) {
-//        array[i] = high_resolution_clock::now();
-//    }
-//}
+using namespace chrono;
 
-//double
-//calculate_time(high_resolution_clock::time_point *start, high_resolution_clock::time_point *end, int *time_samples) {
-//    // Average time and convert to Micro Sec; 1 sec = 1,000,000 micro sec
-//    double total = 0;
-//    for (int i = 0; i < *time_samples; i++) {
-//        chrono::duration<double, std::milli> diff = end[i] - start[i];  // Time in Micro Sec
-//        total += diff.count();
-//    }
-//    return total / *time_samples;
-//}
+void clock(high_resolution_clock::time_point *array, int *time_samples) {
+    for (int i = 0; i < *time_samples; i++) {
+        array[i] = high_resolution_clock::now();
+    }
+}
+
+double calculate_time(high_resolution_clock::time_point *start, high_resolution_clock::time_point *end, int *time_samples) {
+    // Average time and convert to Micro Sec; 1 sec = 1,000,000 micro sec
+    double total = 0;
+    for (int i = 0; i < *time_samples; i++) {
+        chrono::duration<double, std::milli> diff = end[i] - start[i];  // Time in Micro Sec
+        total += diff.count();
+    }
+    return total / *time_samples;
+}
 
 //void print(int sample_size, int min, int max, int bucketSize, vector<int> *data) {
 //    //////// Print //////////////
@@ -81,16 +80,12 @@ using namespace std;
 //void broadcast() {}
 
 void min_max_reduce(int *min, int *max, int *local_buffer, int &maxMessage, int root) {
-    // Find max and min
-    for (int i = 0; i < maxMessage; i++) {
-//        if (*min > *&local_buffer[i])
-//            *min = *&local_buffer[i];
-//        if (*max < *&local_buffer[i])
-//            *max = *&local_buffer[i];
-    }
-//    MPI_Reduce(min, min, 1, MPI_INT, MPI_MIN, root, MPI_COMM_WORLD);
-//    MPI_Reduce(max, max, 1, MPI_INT, MPI_MAX, root, MPI_COMM_WORLD);
+        // todo make a function
+}
 
+void init_array(int* a, int arr_size){
+    for(int i = 0; i< arr_size; i++)
+        a[i] = 0;
 }
 
 
@@ -100,10 +95,10 @@ int main(int argc, char *argv[]) {
 
     //////// Start Clock //////////////
     // Use Chrono for high grade clock
-//    int time_samples = 5;
-//    high_resolution_clock::time_point clock_start[time_samples];
-//    high_resolution_clock::time_point clock_end[time_samples];
-//    clock(clock_start, &time_samples);
+    int time_samples = 5;
+    high_resolution_clock::time_point clock_start[time_samples];
+    high_resolution_clock::time_point clock_end[time_samples];
+    clock(clock_start, &time_samples);
 
 //    //////// USER INPUT//////////////
 //    if (argc != 3) {
@@ -123,16 +118,12 @@ int main(int argc, char *argv[]) {
     string filePath = "random.binary";
 
 
-
-
-
-
-
-
     //////// MPI  Variables //////////////
     const int root = 0;
-    const int maxMessage = 10;
-    int local_buffer[maxMessage] = {0};
+    int maxMessage = 2;
+    int local_buffer[maxMessage];
+    init_array(local_buffer, maxMessage);
+
     int local_min = numeric_limits<int>::max();
     int local_max = numeric_limits<int>::min();
     int num_iterations;
@@ -152,14 +143,14 @@ int main(int argc, char *argv[]) {
     int min = local_min;
     int max = local_max;
     int readBuffer[bufferSize];
-    for(int i =0; i< bufferSize; i++) readBuffer[i] = 0;
+    init_array(readBuffer, bufferSize);
     int seek = 0;
-//    vector<int> buffer(bufferSize, 0);
-//    vector<int> data(intervalSize, 0);
 
 
 
-    if (my_rank == 0) {
+
+
+    if (my_rank == root) {
         cout << "Reading file"  << endl;
         //////// OPEN FILE //////////////
         ifstream fileInput;
@@ -197,9 +188,10 @@ int main(int argc, char *argv[]) {
 
                 //////// First Pass:  Send to processors   //////////////
                 //  Check if buffer is less then remainder of file
-//                if (fileLength - i < bufferSize) {
-//                    size = fileLength - i;   //todo update for mpi
-//                }
+                if (fileLength - seek < size) {
+                    size = fileLength - seek;   //todo update for mpi
+                    maxMessage = size / comm_sz;
+                }
 
                 fileInput.read((char *) &readBuffer[0], size);  //todo fix
 
@@ -212,6 +204,7 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        MPI_Bcast(&maxMessage, 1, MPI_INT, root, MPI_COMM_WORLD );
         MPI_Scatter(&readBuffer, maxMessage, MPI_INT, &local_buffer, maxMessage, MPI_INT, root, MPI_COMM_WORLD);
 
         for (int i = 0; i < maxMessage; i++) {
@@ -220,6 +213,7 @@ int main(int argc, char *argv[]) {
             if (local_max < local_buffer[i])
                 local_max = local_buffer[i];
         }
+
         MPI_Reduce(&local_min, &min, 1, MPI_INT, MPI_MIN, root, MPI_COMM_WORLD);
         MPI_Reduce(&local_max, &max, 1, MPI_INT, MPI_MAX, root, MPI_COMM_WORLD);
 
@@ -229,14 +223,18 @@ int main(int argc, char *argv[]) {
     }
 
 
+    ////////  END CLOCK //////////////
+    //////// GET TIME //////////////
 
-//
-//    ////////  END CLOCK //////////////
-//    //////// GET TIME //////////////
-//    clock(clock_end, &time_samples);
-//    double total_time = calculate_time(clock_start, clock_end, &time_samples);
-//    cout << "AVG Time: " << total_time << " Milli Seconds" << endl;
     if(my_rank == root){
+
+
+
+    clock(clock_end, &time_samples);
+    double total_time = calculate_time(clock_start, clock_end, &time_samples);
+    cout << "AVG Time: " << total_time << " Milli Seconds" << endl;
+
+
         cout << "Program complete!" << endl;
 
         cout <<" : Min: " << min  << " from processor " << my_rank << endl;
