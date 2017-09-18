@@ -1,7 +1,7 @@
 #!bin/bash
 rm ./mpi_program -f
 mpiCC -g -Wall -o mpi_program main.cpp -std=c++0x 
-mpiexec -n 5  mpi_program  ./random.binary  10
+mpiexec -n 8  mpi_program  ./random.binary  15
 
 
 
