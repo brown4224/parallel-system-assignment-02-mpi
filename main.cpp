@@ -37,7 +37,8 @@ void clock(high_resolution_clock::time_point *array, int *time_samples) {
     }
 }
 
-double calculate_time(high_resolution_clock::time_point *start, high_resolution_clock::time_point *end, int *time_samples) {
+double
+calculate_time(high_resolution_clock::time_point *start, high_resolution_clock::time_point *end, int *time_samples) {
     // Average time and convert to Micro Sec; 1 sec = 1,000,000 micro sec
     double total = 0;
     for (int i = 0; i < *time_samples; i++) {
@@ -47,18 +48,15 @@ double calculate_time(high_resolution_clock::time_point *start, high_resolution_
     return total / *time_samples;
 }
 
-void print(int sample_size, int min, int max, int bucketSize, int* data, int myrank, int intervalSize) {
-
+void print(int sample_size, int min, int max, int bucketSize, int *data, int myrank, int intervalSize) {
     cout << "Report from processor:  " << myrank << endl;
     cout << "Sample Size: " << sample_size << endl;
-    cout << "Min Value: " <<  min << endl;
+    cout << "Min Value: " << min << endl;
     cout << "Max Value: " << max << endl;
     cout << "bucket Range: " << bucketSize - 1 << endl;
-
-    for(int i = 0; i< intervalSize; i++){
+    for (int i = 0; i < intervalSize; i++) {
         cout << "[" << min + (i * bucketSize) << ", " << min + ((i + 1) * bucketSize) - 1 << "] : " << data[i] << endl;
     }
-
 }
 
 int check_user_number(char *argv) {
@@ -70,15 +68,15 @@ int check_user_number(char *argv) {
 }
 
 
-void init_array(int* a, int arr_size){
+void init_array(int *a, int arr_size) {
     new int[arr_size];
-    for(int i = 0; i< arr_size; i++)
+    for (int i = 0; i < arr_size; i++)
         a[i] = 0;
 }
 
 
-
-void readFile(string* filePath, int* readBuffer, int* messageSize, int* fileLength, int* comm_sz, int* seek, int* size, int* unit, int* remainder){
+void readFile(string *filePath, int *readBuffer, int *messageSize, int *fileLength, int *comm_sz, int *seek, int *size,
+              int *unit, int *remainder) {
     //////// OPEN FILE //////////////
     ifstream fileInput;
     fileInput.open(*filePath, ios::binary);
@@ -88,19 +86,11 @@ void readFile(string* filePath, int* readBuffer, int* messageSize, int* fileLeng
         //  Check if buffer is less then remainder of file
         if (*fileLength - *seek < *size) {
             *size = *fileLength - *seek;
-            *messageSize = (*size/ *unit ) / *comm_sz;
-            *remainder = (*size/ *unit) - (*messageSize * *comm_sz);
+            *messageSize = (*size / *unit) / *comm_sz;
+            *remainder = (*size / *unit) - (*messageSize * *comm_sz);
         }
-
         fileInput.read((char *) &readBuffer[0], *size);
-//        *seek = *size;
-
-//        for(int i = 0; i< 10; i++){
-//            cout << i << " Value: " << readBuffer[i] << endl;
-//        }
-
         *seek = fileInput.tellg();
-//        cout << "Seek: " << *seek << endl;
         fileInput.close();
     } else {
         cout << "Can Not open file..." << endl;
@@ -109,17 +99,18 @@ void readFile(string* filePath, int* readBuffer, int* messageSize, int* fileLeng
 }
 
 
-void send_data(int* readBuffer, int* local_buffer, int* messageSize, int root, int* my_rank, int* size, int* unit, int* remainder){
-    MPI_Bcast(messageSize, 1, MPI_INT, root, MPI_COMM_WORLD );
+void send_data(int *readBuffer, int *local_buffer, int *messageSize, int root, int *my_rank, int *size, int *unit,
+               int *remainder) {
+    MPI_Bcast(messageSize, 1, MPI_INT, root, MPI_COMM_WORLD);
     MPI_Scatter(readBuffer, *messageSize, MPI_INT, local_buffer, *messageSize, MPI_INT, root, MPI_COMM_WORLD);
 
 
-    if(*remainder > 0 && *my_rank == root){
-        std::copy(readBuffer + ((*size/ *unit )- *remainder), readBuffer + (*size / *unit), local_buffer + *messageSize);
+    if (*remainder > 0 && *my_rank == root) {
+        std::copy(readBuffer + ((*size / *unit) - *remainder), readBuffer + (*size / *unit),
+                  local_buffer + *messageSize);
         *messageSize += *remainder;
     }
 }
-
 
 
 int main(int argc, char *argv[]) {
@@ -193,10 +184,7 @@ int main(int argc, char *argv[]) {
         if (fileInput.is_open()) {
             fileInput.seekg(0, ios::end);
             fileLength = fileInput.tellg();
-//            num_iterations = (int) floor((double) fileLength / bufferSize);
             num_iterations = (int) ceil((double) fileLength / bufferSize);
-//            num_iterations -= 2;
-//            cout << "Number of Iterations: " << num_iterations << endl;
             fileInput.close();
         } else {
             cout << "Can Not open file..." << endl;
@@ -204,31 +192,17 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Let Process know how many rounds
-    MPI_Bcast(&num_iterations, 1, MPI_INT, root, MPI_COMM_WORLD );
+    // Let Process know how many rounds to expect
+    MPI_Bcast(&num_iterations, 1, MPI_INT, root, MPI_COMM_WORLD);
 
 
     //////// FIND MIN MAX //////////////
     for (int i = 0; i < num_iterations; i++) {
-//        if (my_rank == root)
-//            cout << "Iteration: " << i << endl;
         if (my_rank == 0) {
             readFile(&filePath, readBuffer, &messageSize, &fileLength, &comm_sz, &seek, &size, &unit, &remainder);
         }
 
-
         send_data(readBuffer, local_buffer, &messageSize, root, &my_rank, &size, &unit, &remainder);
-
-
-//        MPI_Bcast(&messageSize, 1, MPI_INT, root, MPI_COMM_WORLD );
-//        MPI_Scatter(&readBuffer, messageSize, MPI_INT, &local_buffer, messageSize, MPI_INT, root, MPI_COMM_WORLD);
-//
-//
-//        if(remainder > 0 && my_rank == root){
-//            std::copy(readBuffer + ((size/ unit )- remainder), readBuffer + (size/unit), local_buffer + messageSize);
-//            messageSize += remainder;
-//        }
-
 
         //Calculate
         for (int i = 0; i < messageSize; i++) {
@@ -242,7 +216,7 @@ int main(int argc, char *argv[]) {
     //////// Rest Values and Send Min and Max //////////////
     messageSize = maxMessage;
     seek = 0;
-    remainder =0;
+    remainder = 0;
     size = bufferSize;
     MPI_Allreduce(&local_min, &min, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
     MPI_Allreduce(&local_max, &max, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
@@ -251,7 +225,7 @@ int main(int argc, char *argv[]) {
 
     //////// FIND Buckets //////////////
     int range = abs(max - min);
-    bucketSize =  range / intervalSize;
+    bucketSize = range / intervalSize;
     bucketSize++;
 
 
@@ -261,23 +235,6 @@ int main(int argc, char *argv[]) {
         }
         send_data(readBuffer, local_buffer, &messageSize, root, &my_rank, &size, &unit, &remainder);
 
-
-        // Message length can vary: Update then send array
-//        MPI_Bcast(&messageSize, 1, MPI_INT, root, MPI_COMM_WORLD );
-//        MPI_Scatter(&readBuffer, messageSize, MPI_INT, &local_buffer, messageSize, MPI_INT, root, MPI_COMM_WORLD);
-//
-//        if(remainder > 0 && my_rank == root){
-//            std::copy(readBuffer + ((size/ unit )- remainder), readBuffer + (size/unit), local_buffer + messageSize);
-//            messageSize += remainder;
-//        }
-//
-//        for(int i = 0; i< intervalSize; i++){
-//            if(my_rank == root){
-//                cout << "Print Value" << endl;
-//                cout << i << " Value: " << local_buffer[i] << endl;
-//            }
-//        }
-
         //Calculate
         for (int i = 0; i < messageSize; i++) {
             local_data[(local_buffer[i] - min) / bucketSize]++;
@@ -285,30 +242,21 @@ int main(int argc, char *argv[]) {
     }
 
 
-    for(int i = 0; i< intervalSize; i++){
-//        if(my_rank == root){
-//            cout << "Print Value" << endl;
-//            cout << i << " Value: " << local_buffer[i] << endl;
-//        }
+//    for (int i = 0; i < intervalSize; i++) {
+//        MPI_Reduce(&local_data[i], &data[i], intervalSize, MPI_INT, MPI_SUM, root, MPI_COMM_WORLD);
+//    }
 
-
-        MPI_Reduce(&local_data[i], &data[i], 1, MPI_INT, MPI_SUM, root, MPI_COMM_WORLD);
-    }
-
+    MPI_Reduce(&local_data, &data, intervalSize, MPI_INT, MPI_SUM, root, MPI_COMM_WORLD);
 
     MPI_Finalize();
 
-
-
     ////////  END CLOCK //////////////
     //////// GET TIME //////////////
-    if(my_rank == root){
+    if (my_rank == root) {
         print(fileLength / unit, min, max, bucketSize, data, my_rank, intervalSize);;
         clock(clock_end, &time_samples);
         double total_time = calculate_time(clock_start, clock_end, &time_samples);
         cout << "AVG Time: " << total_time << " Milli Seconds" << endl;
     }
-
-
     return 0;
 }
