@@ -9,7 +9,6 @@
  *
  *
  * Program:
-
  * Running the File:
  * I recommend putting these in the same folder
  * To run file execute the binary file as ./filename
@@ -101,7 +100,7 @@ void readFile(string *filePath, int *readBuffer, int *messageSize, int *fileLeng
 
 void send_data(int *readBuffer, int *local_buffer, int *messageSize, int root, int *my_rank, int *size, int *unit,
                int *remainder) {
-    MPI_Bcast(messageSize, 1, MPI_INT, root, MPI_COMM_WORLD);
+//    MPI_Bcast(messageSize, 1, MPI_INT, root, MPI_COMM_WORLD);
     MPI_Scatter(readBuffer, *messageSize, MPI_INT, local_buffer, *messageSize, MPI_INT, root, MPI_COMM_WORLD);
 
 
@@ -110,6 +109,28 @@ void send_data(int *readBuffer, int *local_buffer, int *messageSize, int root, i
                   local_buffer + *messageSize);
         *messageSize += *remainder;
     }
+}
+
+
+void build_mpi_data_type(int* data_1, int* data_2, int root){
+
+    MPI_Datatype custom_type = NULL;
+    // Variables
+    MPI_Aint data_1_addr, data_2_addr;
+    MPI_Get_address(data_1, &data_1_addr);
+    MPI_Get_address(data_2, &data_2_addr);
+
+
+    int array_of_blocklengths[2] = {1, 1};
+    MPI_Datatype array_of_types [2] = {MPI_INT, MPI_INT};
+    MPI_Aint array_of_displacements [2] = {0, data_2_addr - data_1_addr};
+    MPI_Type_create_struct(2, array_of_blocklengths, array_of_displacements, array_of_types, &custom_type);
+    MPI_Type_commit(&custom_type);
+
+
+    MPI_Bcast(data_1,1, custom_type, root, MPI_COMM_WORLD);
+    MPI_Type_free(&custom_type);
+
 }
 
 
@@ -144,7 +165,8 @@ int main(int argc, char *argv[]) {
     //////// MPI  Variables //////////////
     const int root = 0;
     int maxMessage = 1000;
-    int messageSize = maxMessage;
+    int* messageSize = &maxMessage;
+    int minMessage = 0;
     int local_buffer[maxMessage + comm_sz];
     init_array(local_buffer, maxMessage + comm_sz);
     int local_data[intervalSize];
@@ -185,6 +207,16 @@ int main(int argc, char *argv[]) {
             fileInput.seekg(0, ios::end);
             fileLength = fileInput.tellg();
             num_iterations = (int) ceil((double) fileLength / bufferSize);
+
+            if (fileLength < bufferSize) {
+                minMessage = (fileLength / unit) / comm_sz;
+            } else{
+                minMessage = (( fileLength -  (num_iterations - 1) * bufferSize)) / (unit * comm_sz);
+                if (minMessage <= 0 )
+                    minMessage = maxMessage;
+            }
+
+
             fileInput.close();
         } else {
             cout << "Can Not open file..." << endl;
@@ -193,19 +225,28 @@ int main(int argc, char *argv[]) {
     }
 
     // Let Process know how many rounds to expect
-    MPI_Bcast(&num_iterations, 1, MPI_INT, root, MPI_COMM_WORLD);
+//    MPI_Bcast(&num_iterations, 1, MPI_INT, root, MPI_COMM_WORLD);
+
+//    build_mpi_data_type(&num_iterations, messageSize, root);
+    build_mpi_data_type(&num_iterations, &minMessage, root);
 
 
+    int last = num_iterations -1;
     //////// FIND MIN MAX //////////////
     for (int i = 0; i < num_iterations; i++) {
-        if (my_rank == 0) {
-            readFile(&filePath, readBuffer, &messageSize, &fileLength, &comm_sz, &seek, &size, &unit, &remainder);
+        if(i == last) {
+            messageSize = &minMessage;
+//            cout << " Message size Min Max: " << *messageSize << " :from processor: " << my_rank << endl;
         }
 
-        send_data(readBuffer, local_buffer, &messageSize, root, &my_rank, &size, &unit, &remainder);
+        if (my_rank == 0) {
+            readFile(&filePath, readBuffer, messageSize, &fileLength, &comm_sz, &seek, &size, &unit, &remainder);
+        }
+
+        send_data(readBuffer, local_buffer, messageSize, root, &my_rank, &size, &unit, &remainder);
 
         //Calculate
-        for (int i = 0; i < messageSize; i++) {
+        for (int i = 0; i < *messageSize; i++) {
             if (local_min > local_buffer[i])
                 local_min = local_buffer[i];
             if (local_max < local_buffer[i])
@@ -214,14 +255,35 @@ int main(int argc, char *argv[]) {
     }
 
     //////// Rest Values and Send Min and Max //////////////
-    messageSize = maxMessage;
+    messageSize = &maxMessage;
     seek = 0;
     remainder = 0;
     size = bufferSize;
+
+
+//    MPI_Barrier(MPI_COMM_WORLD);
+//    int time_samples = 5;
+//    high_resolution_clock::time_point clock_start[time_samples];
+//    high_resolution_clock::time_point clock_end[time_samples];
+//    clock(clock_start, &time_samples);
+
     MPI_Allreduce(&local_min, &min, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
     MPI_Allreduce(&local_max, &max, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
 
+//    MPI_Reduce(&local_min, &min, 1, MPI_INT, MPI_MIN, root, MPI_COMM_WORLD);
+//    MPI_Reduce(&local_max, &max, 1, MPI_INT, MPI_MAX, root, MPI_COMM_WORLD);
+//    build_mpi_data_type(&min, &max, root);
 
+
+//    MPI_Barrier(MPI_COMM_WORLD);
+//    ////////  END CLOCK //////////////
+//    //////// GET TIME //////////////
+//    if (my_rank == root) {
+//        print(fileLength / unit, min, max, bucketSize, data, my_rank, intervalSize);;
+//        clock(clock_end, &time_samples);
+//        double total_time = calculate_time(clock_start, clock_end, &time_samples);
+//        cout << "AVG Time: " << total_time << " Milli Seconds" << endl;
+//    }
 
     //////// FIND Buckets //////////////
     int range = abs(max - min);
@@ -230,13 +292,19 @@ int main(int argc, char *argv[]) {
 
 
     for (int i = 0; i < num_iterations; i++) {
-        if (my_rank == 0) {
-            readFile(&filePath, readBuffer, &messageSize, &fileLength, &comm_sz, &seek, &size, &unit, &remainder);
+        if(i == last) {
+            messageSize = &minMessage;
+//            cout << " Message size Bucket: " << *messageSize << " :from processor: " << my_rank << endl;
         }
-        send_data(readBuffer, local_buffer, &messageSize, root, &my_rank, &size, &unit, &remainder);
+
+        if (my_rank == 0) {
+            readFile(&filePath, readBuffer, messageSize, &fileLength, &comm_sz, &seek, &size, &unit, &remainder);
+        }
+
+        send_data(readBuffer, local_buffer, messageSize, root, &my_rank, &size, &unit, &remainder);
 
         //Calculate
-        for (int i = 0; i < messageSize; i++) {
+        for (int i = 0; i < *messageSize; i++) {
             local_data[(local_buffer[i] - min) / bucketSize]++;
         }
     }
@@ -250,8 +318,8 @@ int main(int argc, char *argv[]) {
 
     MPI_Finalize();
 
-    ////////  END CLOCK //////////////
-    //////// GET TIME //////////////
+//    ////////  END CLOCK //////////////
+//    //////// GET TIME //////////////
     if (my_rank == root) {
         print(fileLength / unit, min, max, bucketSize, data, my_rank, intervalSize);;
         clock(clock_end, &time_samples);
