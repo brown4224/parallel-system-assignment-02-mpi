@@ -71,6 +71,8 @@ typedef struct {
     int local_max;
     int num_iterations;
     int intervalSize;
+    bool keep_alive;
+    bool alive;
 
 
     //////// Root Variables //////////////
@@ -88,6 +90,8 @@ typedef struct {
     int remainder;
 
 } data;
+
+
 
 
 // Input:  Takes in a pointer to the clock array and number of samples
@@ -180,15 +184,26 @@ void readFile(void *ptr, ifstream *fileInput) {
 // Output: Reads call back to read file or init file
 void openFile(void(&f)(void *ptr, ifstream *fileInput), void *ptr) {
     data *tdata = (data *) ptr;
-    ifstream fileInput;
-    fileInput.open(tdata->filePath, ios::binary);
-    if (fileInput.is_open()) {
+    if (tdata->my_rank == tdata->root) {
 
-        // Function CAll Back
-        f(tdata, &fileInput);
-        fileInput.close();
-    } else {
-        cout << "Can Not open file..." << endl;
+        ifstream fileInput;
+        fileInput.open(tdata->filePath, ios::binary);
+        if (fileInput.is_open()) {
+
+            // Function CAll Back
+            f(tdata, &fileInput);
+            fileInput.close();
+        } else {
+            cout << "Can Not open file..." << endl;
+            tdata->keep_alive = false;
+        }
+    }
+
+    // All processes call and check for error
+    MPI_Allreduce(&tdata->keep_alive, &tdata->alive, 1,MPI_C_BOOL, MPI_LAND, MPI_COMM_WORLD );
+    if(!(tdata->alive)){
+        printf("Abort process called.  Thread %d shutting down!\n", tdata->my_rank);
+        MPI_Finalize();
         exit(1);
     }
 
@@ -249,12 +264,11 @@ void loop_read_send(void(&f)(void *ptr), void *ptr) {
         if (i == last)
             tdata->messageSize = &tdata->minMessage;
 
-        //  Root opens and reads the file
-        if (tdata->my_rank == 0) {
-            openFile(readFile, tdata);
-        }
 
-        // Send Data
+
+
+        // Read in data and Send Data
+        openFile(readFile, tdata);
         MPI_Scatter(tdata->readBuffer, *tdata->messageSize, MPI_INT, tdata->local_buffer, *tdata->messageSize, MPI_INT, tdata->root, MPI_COMM_WORLD);
 
         // Root gets any data not evenly split
@@ -305,6 +319,8 @@ int main(int argc, char *argv[]) {
     tdata.local_data = new int[tdata.intervalSize];
     tdata.local_min = numeric_limits<int>::max();
     tdata.local_max = numeric_limits<int>::min();
+    tdata.keep_alive = true;
+    tdata.alive = true;
 
 
     //////// Root Variables //////////////
@@ -327,12 +343,8 @@ int main(int argc, char *argv[]) {
     init_array(tdata.data, tdata.intervalSize);
 
 
-    //////// OPEN FILE //////////////
-    //////// GET File Size //////////////
-    if (tdata.my_rank == tdata.root) {
-        cout << "Starting Program: Assignment 2 MPI" << endl;
-        openFile(get_file_size_and_init, &tdata);
-    }
+   //////// OPEN FILE //////////////
+    openFile(get_file_size_and_init, &tdata);
 
     //////// Send INIT MESG, Then Send all data and Reduce //////////////
     build_mpi_data_type(&tdata.num_iterations, &tdata.minMessage, tdata.root);
